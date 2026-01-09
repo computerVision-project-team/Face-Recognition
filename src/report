@@ -19,7 +19,7 @@ Parameters must be tuned experimentally to balance robustness and efficiency
 4.2.b5-4.2.c2
 举例：
 开摄像头训练 python -m cvproj_exc.training --video none --label tzy
-用数据集训练
+用数据集训练（这个就是不一定全都上，但是复制起来方便一点，所以我全列上了，酌情使用）
 python -m cvproj_exc.training --video "..\data\train_data\Al_Pacino\%04d.jpg"        --label Al_Pacino
 python -m cvproj_exc.training --video "..\data\train_data\Alan_Ball\%04d.jpg"       --label Alan_Ball
 python -m cvproj_exc.training --video "..\data\train_data\Manuel_Pellegrini\%04d.jpg" --label Manuel_Pellegrini

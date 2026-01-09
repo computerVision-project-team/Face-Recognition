@@ -1,0 +1,17 @@
+4.1.1Limitations of tracking
+
+Template matching is sensitive to large head pose variations, occlusions, and illumination changes
+
+Scale changes (subject moving closer or farther from the camera) cannot be handled during tracking
+
+Fast motion exceeding the search window may cause tracking failure
+
+Background regions with similar appearance can lead to false matches
+
+4.1.2 Parameter tuning
+
+Larger search windows improve robustness but increase computation and false matches
+
+Higher similarity thresholds trigger re-detection more frequently, while lower thresholds may cause drift
+
+Parameters must be tuned experimentally to balance robustness and efficiency

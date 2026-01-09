@@ -161,6 +161,7 @@ class FaceClustering:
     # Prepare FaceClustering; specify all parameters of clustering algorithm.
     def __init__(self, num_clusters=2, max_iter=200):
         # TODO: Prepare FaceNet.
+        self.facenet = FaceNet()
 
         # The underlying gallery: embeddings without class labels.
         self.embeddings = np.empty((0, FaceNet.embedding_dimensionality))
@@ -198,12 +199,71 @@ class FaceClustering:
 
     # TODO
     def partial_fit(self, face):
-        return None
+        emb = self.facenet.predict(face).astype(np.float32)  # (128,)
+        self.embeddings = np.vstack([self.embeddings, emb[None, :]])
 
     # TODO
     def fit(self):
-        return None
+        X = self.embeddings
+        n = X.shape[0]
+        k = self.num_clusters
+
+        if n < k:
+            raise ValueError(f"Need at least k={k} samples, got {n}")
+
+        # init: pick k random embeddings as centers
+        rng = np.random.default_rng()
+        init_idx = rng.choice(n, size=k, replace=False)
+        C = X[init_idx].copy()  # (k, 128)
+
+        prev_membership = None
+        objective_history = []
+
+        for it in range(self.max_iter):
+            # assignment step
+            # distances: (n, k)
+            dists = np.linalg.norm(X[:, None, :] - C[None, :, :], axis=2)
+            membership = np.argmin(dists, axis=1)  # (n,)
+
+            # objective (sum of squared distances to assigned centers)
+            sse = float(np.sum((dists[np.arange(n), membership]) ** 2))
+            objective_history.append(sse)
+
+            # stop if unchanged
+            if prev_membership is not None and np.array_equal(membership, prev_membership):
+                break
+            prev_membership = membership.copy()
+
+            # update
+            for j in range(k):
+                idx = np.where(membership == j)[0]
+                if idx.size == 0:
+                    # empty cluster -> re-init to a random point
+                    C[j] = X[rng.integers(0, n)]
+                else:
+                    C[j] = np.mean(X[idx], axis=0)
+
+            # keep centers normalized (optional but consistent with normalized embeddings)
+            C = C / np.linalg.norm(C, axis=1, keepdims=True)
+
+        # store results
+        self.cluster_center = C
+        self.cluster_membership = membership.tolist()
+
+        # print objective history as a small table (meets a3 requirement)
+        print("k-means objective (SSE) over iterations:")
+        for i, val in enumerate(objective_history):
+            print(f"  iter {i:03d}: {val:.6f}")
+
 
     # TODO
     def predict(self, face) -> tuple[int, np.ndarray]:
-        return None
+        if self.cluster_center.shape[0] == 0:
+            raise ValueError("Model not fitted: cluster_center is empty. Run fit() first.")
+
+        x = self.facenet.predict(face).astype(np.float32)  # (128,)
+        dx = np.linalg.norm(self.cluster_center - x[None, :], axis=1)  # (k,)
+        j = int(np.argmin(dx))
+        return j, dx
+
+

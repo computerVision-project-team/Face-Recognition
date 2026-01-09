@@ -32,7 +32,7 @@ class FaceDetector:
         # Size of face image after landmark-based alignment.
         self.aligned_image_size = aligned_image_size
 
-        # Specify all parameters for template matching.
+        # TODO: Specify all parameters for template matching.
         # Template matching parameters
         self.tm_window_size = int(tm_window_size)      # search margin in pixels (+/-)
         self.tm_threshold = float(tm_threshold)        # score threshold
@@ -42,7 +42,7 @@ class FaceDetector:
         self._template_gray: Optional[np.ndarray] = None
         self._last_rect: Optional[tuple[int, int, int, int]] = None
 
-    # Track a face in a new image using template matching.
+    # TODO: Track a face in a new image using template matching.
     def track_face(self, image: np.ndarray) -> Optional[FaceDetectionResult]:
         """
         Track a face in `image` using template matching.

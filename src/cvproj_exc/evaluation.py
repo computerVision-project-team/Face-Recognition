@@ -96,15 +96,17 @@ class OpenSetEvaluation:
     def run(self) -> Dict[str, np.ndarray]:
         self._fit_classifier_if_possible()
         # compute impostor similarities on training unknowns for threshold selection
+        # collect impostor similarities for threshold calibration
         unk_train_mask = self.train_labels == UNKNOWN_LABEL
+        unk_test_mask = self.test_labels == UNKNOWN_LABEL
+
         if np.any(unk_train_mask):
-            unk_train_emb = self.train_embeddings[unk_train_mask]
-            _, unk_train_sim = self._predict_nn(unk_train_emb)
+            _, impostor_sim = self._predict_nn(self.train_embeddings[unk_train_mask])
+        elif np.any(unk_test_mask):
+            # train has no unknowns -> calibrate on test unknowns
+            _, impostor_sim = self._predict_nn(self.test_embeddings[unk_test_mask])
         else:
-            # If no unknowns in train split, we cannot calibrate FAR properly.
-            # Fall back to using ALL train samples excluding same identity isn't possible here,
-            # so we use an empty array and default thresholds to +inf (FAR ~ 0).
-            unk_train_sim = np.asarray([], dtype=np.float32)
+            impostor_sim = np.asarray([], dtype=np.float32)
 
         # predict on test split (labels + similarities) once ---
         test_pred_labels, test_pred_sim = self._predict_nn(self.test_embeddings)
@@ -114,7 +116,7 @@ class OpenSetEvaluation:
         identification_rates = np.zeros_like(self.false_alarm_rate_range, dtype=np.float32)
 
         for i, far in enumerate(self.false_alarm_rate_range):
-            tau = self.select_similarity_threshold(unk_train_sim, float(far))
+            tau = self.select_similarity_threshold(impostor_sim, float(far))
             similarity_thresholds[i] = tau
 
             # Apply open-set decision rule: reject as unknown if similarity < tau

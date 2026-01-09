@@ -38,6 +38,11 @@ class FaceRecognizer:
     # Prepare FaceRecognizer; specify all parameters for face identification.
     def __init__(self, num_neighbours=1, max_distance=2.0, min_prob=0.0):
         # TODO: Prepare FaceNet and set all parameters for kNN.
+        self.facenet = FaceNet()
+
+        self.num_neighbours = int(num_neighbours)
+        self.max_distance = float(max_distance)
+        self.min_prob = float(min_prob)
 
         # The underlying gallery: class labels and embeddings.
         self.labels = []
@@ -61,11 +66,56 @@ class FaceRecognizer:
 
     # TODO: Train face identification with a new face with labeled identity.
     def partial_fit(self, face, label):
+        # face: aligned face image (224x224x3 BGR)
+        emb = self.facenet.predict(face).astype(np.float32)  # (128,)
+        self.embeddings = np.vstack([self.embeddings, emb[None, :]])
+        self.labels.append(str(label))
         return None
 
     # TODO: Predict the identity for a new face.
     def predict(self, face) -> tuple[str, float, float]:
-        return None
+        """
+        Returns: (predicted_label, posterior_probability, best_distance)
+        """
+        if self.embeddings.shape[0] == 0:
+            return ("unknown", 0.0, float("inf"))
+
+        q = self.facenet.predict(face).astype(np.float32)  # (128,)
+
+        # L2 distances to all gallery embeddings
+        diff = self.embeddings - q[None, :]
+        dists = np.linalg.norm(diff, axis=1)  # (N,)
+
+        k = max(1, min(self.num_neighbours, dists.shape[0]))
+        nn_idx = np.argpartition(dists, k - 1)[:k]
+        nn_idx = nn_idx[np.argsort(dists[nn_idx])]  # sorted k-NN
+
+        best_idx = int(nn_idx[0])
+        best_dist = float(dists[best_idx])
+
+        # Compute a simple "posterior" over the k neighbours via softmax(-dist)
+        # (smaller distance -> higher weight)
+        nn_d = dists[nn_idx]
+        # numerical stability
+        logits = -nn_d
+        logits = logits - np.max(logits)
+        weights = np.exp(logits)
+        weights = weights / (np.sum(weights) + 1e-12)
+
+        # Aggregate probability mass per label
+        label_scores = {}
+        for w, idx in zip(weights, nn_idx):
+            lab = self.labels[int(idx)]
+            label_scores[lab] = label_scores.get(lab, 0.0) + float(w)
+
+        pred_label = max(label_scores.items(), key=lambda x: x[1])[0]
+        prob = float(label_scores[pred_label])
+
+        # Apply rejection thresholds
+        if best_dist > self.max_distance or prob < self.min_prob:
+            return ("unknown", prob, best_dist)
+
+        return (pred_label, prob, best_dist)
 
 
 # The FaceClustering class enables unsupervised clustering of face images according to their

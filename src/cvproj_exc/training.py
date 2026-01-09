@@ -19,7 +19,7 @@ from cvproj_exc.face_recognition import FaceClustering, FaceRecognizer
 def main(args):
     # Setup OpenCV video capture.
     if args.video == "none":
-        camera = cv2.VideoCapture(-1)
+        camera = cv2.VideoCapture(0) # change
         wait_for_frame = 1
     else:
         camera = cv2.VideoCapture(args.video)

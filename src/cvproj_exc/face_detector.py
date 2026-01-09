@@ -21,7 +21,7 @@ class FaceDetector:
 
     # Prepare the face detector; specify all parameters used for detection, tracking, and alignment.
     def __init__(
-        self, tm_window_size: int = 100, tm_threshold: float = 0.0, aligned_image_size: int = 224
+        self, tm_window_size: int = 25, tm_threshold: float = 0.6, aligned_image_size: int = 224 # change
     ) -> None:
         # Prepare face alignment.
         self.detector = MTCNN()
@@ -49,6 +49,12 @@ class FaceDetector:
         Only modifies this method: wraps MTCNN calls to avoid crashing when mtcnn throws on empty batches.
         """
 
+        if not hasattr(self, "_lost_count"):
+            self._lost_count = 0
+
+        if not hasattr(self, "_lost_patience"):
+            self._lost_patience = 3  # 连续失败 3 次才重检
+
         # Helper: safe detection (do NOT modify detect_face itself)
         def _safe_detect(img: np.ndarray) -> Optional[FaceDetectionResult]:
             try:
@@ -57,14 +63,14 @@ class FaceDetector:
                 # mtcnn can throw when internal batch is empty -> treat as "no face"
                 return None
 
-        # --- 1) Initialize if we have no reference/template yet ---
+        # Initialize if have no reference/template yet
         if self.reference is None or self._template_gray is None or self._last_rect is None:
             det = _safe_detect(image)
             if det is None:
                 # ensure tracker state is reset
-                self.reference = None
-                self._template_gray = None
-                self._last_rect = None
+                # self.reference = None
+                # self._template_gray = None
+                # self._last_rect = None
                 return None
 
             self.reference = det
@@ -80,7 +86,7 @@ class FaceDetector:
             self._template_gray = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
             return det
 
-        # --- 2) Local template matching around last rect ---
+        # Local template matching around last rect
         x, y, w, h = self._last_rect
         if w <= 1 or h <= 1:
             self.reference = None
@@ -130,25 +136,34 @@ class FaceDetector:
         res = cv2.matchTemplate(search_gray, tpl, self.tm_method)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
 
-        # Lost track -> re-detect safely
+        # Lost track -> maybe re-detect
         if max_val < self.tm_threshold:
-            det = _safe_detect(image)
-            if det is None:
-                self.reference = None
-                self._template_gray = None
-                self._last_rect = None
-                return None
+            self._lost_count += 1
+            if self._lost_count >= self._lost_patience:
+                det = _safe_detect(image)
+                self._lost_count = 0  # 重检后清零
+                if det is None:
+                    self.reference = None
+                    self._template_gray = None
+                    self._last_rect = None
+                    return None
 
-            self.reference = det
-            self._last_rect = det.rect
-            tpl_bgr = self.crop_face(det.image, det.rect)
-            if tpl_bgr.size == 0:
-                self.reference = None
-                self._template_gray = None
-                self._last_rect = None
-                return None
-            self._template_gray = cv2.cvtColor(tpl_bgr, cv2.COLOR_BGR2GRAY)
-            return det
+                self.reference = det
+                self._last_rect = det.rect
+                tpl_bgr = self.crop_face(det.image, det.rect)
+                if tpl_bgr.size == 0:
+                    self.reference = None
+                    self._template_gray = None
+                    self._last_rect = None
+                    return None
+                self._template_gray = cv2.cvtColor(tpl_bgr, cv2.COLOR_BGR2GRAY)
+                return det
+
+            # 失败但未到 patience：不重检，不输出
+            return None
+
+        # success
+        self._lost_count = 0
 
         best_x = sx0 + int(max_loc[0])
         best_y = sy0 + int(max_loc[1])

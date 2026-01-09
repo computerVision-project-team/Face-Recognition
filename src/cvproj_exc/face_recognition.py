@@ -67,55 +67,74 @@ class FaceRecognizer:
     # TODO: Train face identification with a new face with labeled identity.
     def partial_fit(self, face, label):
         # face: aligned face image (224x224x3 BGR)
-        emb = self.facenet.predict(face).astype(np.float32)  # (128,)
-        self.embeddings = np.vstack([self.embeddings, emb[None, :]])
+        # 1) color embedding (BGR)
+        emb_color = self.facenet.predict(face).astype(np.float32)
+
+        # 2) grayscale embedding (FaceNet expects 3 channels)
+        gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+        gray3 = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)  # still 3 channels
+        emb_gray = self.facenet.predict(gray3).astype(np.float32)
+
+        # store BOTH embeddings as two training samples with same label
+        self.embeddings = np.vstack([self.embeddings, emb_color[None, :], emb_gray[None, :]])
         self.labels.append(str(label))
-        return None
+        self.labels.append(str(label))
+
+
 
     # TODO: Predict the identity for a new face.
     def predict(self, face) -> tuple[str, float, float]:
         """
-        Returns: (predicted_label, posterior_probability, best_distance)
+        Closed-set kNN prediction (strictly following exercise definition):
+        - label: majority vote among k nearest neighbours
+        - posterior prob: p(Ci|x) = ki / k
+        - distance to predicted class: d(Ci|x) = min distance among the ki neighbours of that class
+        Returns: (pred_label, prob, dist_to_pred_class)
         """
         if self.embeddings.shape[0] == 0:
             return ("unknown", 0.0, float("inf"))
 
-        q = self.facenet.predict(face).astype(np.float32)  # (128,)
+        x = self.facenet.predict(face).astype(np.float32)  # (128,)
 
-        # L2 distances to all gallery embeddings
-        diff = self.embeddings - q[None, :]
-        dists = np.linalg.norm(diff, axis=1)  # (N,)
+        # Pairwise L2 distances to all gallery samples
+        dists = np.linalg.norm(self.embeddings - x[None, :], axis=1)  # (N,)
 
-        k = max(1, min(self.num_neighbours, dists.shape[0]))
+        k = max(1, min(int(self.num_neighbours), dists.shape[0]))
+
+        # indices of k smallest distances (brute-force)
         nn_idx = np.argpartition(dists, k - 1)[:k]
-        nn_idx = nn_idx[np.argsort(dists[nn_idx])]  # sorted k-NN
+        nn_idx = nn_idx[np.argsort(dists[nn_idx])]  # sorted by distance (optional but helpful)
 
-        best_idx = int(nn_idx[0])
-        best_dist = float(dists[best_idx])
+        nn_labels = [self.labels[int(i)] for i in nn_idx]
 
-        # Compute a simple "posterior" over the k neighbours via softmax(-dist)
-        # (smaller distance -> higher weight)
-        nn_d = dists[nn_idx]
-        # numerical stability
-        logits = -nn_d
-        logits = logits - np.max(logits)
-        weights = np.exp(logits)
-        weights = weights / (np.sum(weights) + 1e-12)
+        # Majority vote: count ki for each class among k-NN
+        counts = {}
+        for lab in nn_labels:
+            counts[lab] = counts.get(lab, 0) + 1
 
-        # Aggregate probability mass per label
-        label_scores = {}
-        for w, idx in zip(weights, nn_idx):
-            lab = self.labels[int(idx)]
-            label_scores[lab] = label_scores.get(lab, 0.0) + float(w)
+        # Pick class with maximum count; tie-break by smaller min distance among that class in k-NN
+        best_label = None
+        best_count = -1
+        best_class_min_dist = float("inf")
 
-        pred_label = max(label_scores.items(), key=lambda x: x[1])[0]
-        prob = float(label_scores[pred_label])
+        for lab, cnt in counts.items():
+            # distances among neighbours that belong to class lab
+            lab_dists = [float(dists[int(i)]) for i in nn_idx if self.labels[int(i)] == lab]
+            lab_min_dist = min(lab_dists) if lab_dists else float("inf")
 
-        # Apply rejection thresholds
-        if best_dist > self.max_distance or prob < self.min_prob:
-            return ("unknown", prob, best_dist)
+            if (cnt > best_count) or (cnt == best_count and lab_min_dist < best_class_min_dist):
+                best_label = lab
+                best_count = cnt
+                best_class_min_dist = lab_min_dist
 
-        return (pred_label, prob, best_dist)
+        # b3) posterior probability p(Ci|x) = ki / k
+        ki = best_count
+        prob = float(ki) / float(k)
+
+        # b4) distance to predicted class d(Ci|x) = min distance among neighbours of predicted class
+        dist_to_class = float(best_class_min_dist)
+
+        return (best_label, prob, dist_to_class)
 
 
 # The FaceClustering class enables unsupervised clustering of face images according to their

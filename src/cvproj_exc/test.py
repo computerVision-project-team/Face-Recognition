@@ -18,7 +18,7 @@ from cvproj_exc.face_recognition import FaceClustering, FaceRecognizer
 def main(args):
     # Setup OpenCV video capture.
     if args.video == "none":
-        camera = cv2.VideoCapture(-1)
+        camera = cv2.VideoCapture(0)    #change
         wait_for_frame = 200
     else:
         camera = cv2.VideoCapture(args.video)
@@ -32,7 +32,7 @@ def main(args):
 
     # Prepare face detection, identification, and clustering.
     detector = FaceDetector()
-    recognizer = FaceRecognizer()
+    recognizer = FaceRecognizer(num_neighbours=args.k)
     clustering = FaceClustering()
 
     # The video capturing loop.
@@ -128,6 +128,14 @@ def arguments():
         help="The video capture input. In case of 'none' the default video capture (webcam) is "
         "used. Use a filename(s) to read video data from image file (see VideoCapture "
         "documentation).",
+    )
+
+    # 4.2.b.5
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=1,
+        help="Number of neighbours for k-NN (closed-set identification).",
     )
 
     return parser.parse_args()

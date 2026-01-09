@@ -15,3 +15,10 @@ Larger search windows improve robustness but increase computation and false matc
 Higher similarity thresholds trigger re-detection more frequently, while lower thresholds may cause drift
 
 Parameters must be tuned experimentally to balance robustness and efficiency
+
+4.2.5
+
+python -m cvproj_exc.test --video "..\data\test_data\Al_Pacino\%04d.jpg" --k 1
+python -m cvproj_exc.test --video "..\data\test_data\Al_Pacino\%04d.jpg" --k 3
+python -m cvproj_exc.test --video "..\data\test_data\Al_Pacino\%04d.jpg" --k 5
+变化不大

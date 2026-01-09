@@ -33,7 +33,7 @@ def main(args):
 
     # Prepare face detection, identification, and clustering.
     detector = FaceDetector()
-    recognizer = FaceRecognizer()
+    recognizer = FaceRecognizer(num_neighbours=args.k) # change
     clustering = FaceClustering()
 
     # The video capturing loop.
@@ -121,6 +121,7 @@ def main(args):
 def arguments():
     parser = argparse.ArgumentParser()
 
+
     parser.add_argument(
         "--mode",
         type=ReIdMode,
@@ -144,7 +145,18 @@ def arguments():
         default="Alan_Ball",
         help="Identity label (only required for face identification).",
     )
+
+    # 4.2.b.5
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=1,
+        help="Number of neighbours for k-NN (closed-set identification).",
+    )
+
+
     return parser.parse_args()
+
 
 
 if __name__ == "__main__":

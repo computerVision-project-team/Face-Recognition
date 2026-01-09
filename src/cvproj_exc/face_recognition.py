@@ -85,40 +85,49 @@ class FaceRecognizer:
     # TODO: Predict the identity for a new face.
     def predict(self, face) -> tuple[str, float, float]:
         """
-        Closed-set kNN prediction (strictly following exercise definition):
-        - label: majority vote among k nearest neighbours
+        Closed-set kNN prediction using TWO query embeddings (color + grayscale).
+        - label: majority vote among k nearest neighbors
         - posterior prob: p(Ci|x) = ki / k
-        - distance to predicted class: d(Ci|x) = min distance among the ki neighbours of that class
+        - distance to predicted class: d(Ci|x) = min distance among the ki neighbors of that class
+        Distances are fused as: d_j = min(||q_color - e_j||2, ||q_gray - e_j||2)
         Returns: (pred_label, prob, dist_to_pred_class)
         """
         if self.embeddings.shape[0] == 0:
             return ("unknown", 0.0, float("inf"))
 
-        x = self.facenet.predict(face).astype(np.float32)  # (128,)
+        # Query embeddings
+        q_color = self.facenet.predict(face).astype(np.float32)  # (128,)
 
-        # Pairwise L2 distances to all gallery samples
-        dists = np.linalg.norm(self.embeddings - x[None, :], axis=1)  # (N,)
+        gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+        gray3 = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        q_gray = self.facenet.predict(gray3).astype(np.float32)  # (128,)
+
+        # Distances from BOTH query embeddings to all gallery embeddings
+        d_color = np.linalg.norm(self.embeddings - q_color[None, :], axis=1)  # (N,)
+        d_gray = np.linalg.norm(self.embeddings - q_gray[None, :], axis=1)  # (N,)
+
+        # Fuse distances (use both embeddings)
+        dists = np.minimum(d_color, d_gray)  # (N,)
 
         k = max(1, min(int(self.num_neighbours), dists.shape[0]))
 
-        # indices of k smallest distances (brute-force)
+        # k-NN indices (smallest distances)
         nn_idx = np.argpartition(dists, k - 1)[:k]
-        nn_idx = nn_idx[np.argsort(dists[nn_idx])]  # sorted by distance (optional but helpful)
+        nn_idx = nn_idx[np.argsort(dists[nn_idx])]
 
         nn_labels = [self.labels[int(i)] for i in nn_idx]
 
-        # Majority vote: count ki for each class among k-NN
+        # Majority vote counts
         counts = {}
         for lab in nn_labels:
             counts[lab] = counts.get(lab, 0) + 1
 
-        # Pick class with maximum count; tie-break by smaller min distance among that class in k-NN
+        # Choose label with highest count; tie-break by smaller min fused distance within that class
         best_label = None
         best_count = -1
         best_class_min_dist = float("inf")
 
         for lab, cnt in counts.items():
-            # distances among neighbours that belong to class lab
             lab_dists = [float(dists[int(i)]) for i in nn_idx if self.labels[int(i)] == lab]
             lab_min_dist = min(lab_dists) if lab_dists else float("inf")
 
@@ -127,14 +136,22 @@ class FaceRecognizer:
                 best_count = cnt
                 best_class_min_dist = lab_min_dist
 
-        # b3) posterior probability p(Ci|x) = ki / k
-        ki = best_count
-        prob = float(ki) / float(k)
+        # b3) posterior probability
+        prob = float(best_count) / float(k)
 
-        # b4) distance to predicted class d(Ci|x) = min distance among neighbours of predicted class
+        # b4) distance to predicted class
         dist_to_class = float(best_class_min_dist)
 
+        # Open-set decision rule (c1)
+        # tau_d: distance threshold, tau_p: probability threshold
+        tau_d = getattr(self, "max_distance", float("inf"))
+        tau_p = getattr(self, "min_prob", 0.0)
+
+        if dist_to_class > tau_d or prob < tau_p:
+            return ("unknown", prob, dist_to_class)
+
         return (best_label, prob, dist_to_class)
+
 
 
 # The FaceClustering class enables unsupervised clustering of face images according to their
